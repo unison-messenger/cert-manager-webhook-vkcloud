@@ -13,8 +13,8 @@ certManager:
   serviceAccountName: cert-manager
 
 image:
-  repository: drone076/cert-manager-webhook-vkcloud
-  tag: 1.0.9
+  repository: ghcr.io/unison-messenger/cert-manager-webhook-vkcloud
+  tag: 1.1.0
   pullPolicy: IfNotPresent
 
 nameOverride: ""
