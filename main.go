@@ -324,6 +324,36 @@ func createTXTRecord(zoneID, name, key, token string) error {
 	return nil
 }
 
+// txtRecord is a TXT record as returned by the VK Public DNS list endpoint
+type txtRecord struct {
+	UUID    string `json:"uuid"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// parseTXTRecords decodes the TXT list response. The API returns a bare JSON
+// array; the object form {"txt_records": [...]} is accepted for compatibility.
+func parseTXTRecords(body []byte) ([]txtRecord, error) {
+	var records []txtRecord
+	arrErr := json.Unmarshal(body, &records)
+	if arrErr == nil {
+		return records, nil
+	}
+
+	var wrapped struct {
+		TXTRecords []txtRecord `json:"txt_records"`
+	}
+	if objErr := json.Unmarshal(body, &wrapped); objErr == nil {
+		return wrapped.TXTRecords, nil
+	}
+
+	snippet := string(body)
+	if len(snippet) > 200 {
+		snippet = snippet[:200] + "..."
+	}
+	return nil, fmt.Errorf("failed to parse TXT records: %v (body: %s)", arrErr, snippet)
+}
+
 // deleteTXTRecord removes the specific TXT record
 func deleteTXTRecord(zoneID, fqdn, zone, key, token string) error {
 	zoneTXTRecordsURL := dnsAPIBaseURL + "%s/txt/"
@@ -351,25 +381,18 @@ func deleteTXTRecord(zoneID, fqdn, zone, key, token string) error {
 		return fmt.Errorf("failed to list TXT records with status %d: %s", resp.StatusCode, body)
 	}
 
-	var recordsResponse struct {
-		TXTRecords []struct {
-			UUID    string `json:"uuid"`
-			Name    string `json:"name"`
-			Content string `json:"content"`
-		} `json:"txt_records"`
-	}
-
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read TXT records response body: %w", err)
 	}
-	if err := json.Unmarshal(body, &recordsResponse); err != nil {
-		return fmt.Errorf("failed to parse TXT records: %w", err)
+	records, err := parseTXTRecords(body)
+	if err != nil {
+		return err
 	}
 
 	var deleteErrors []string
 
-	for _, r := range recordsResponse.TXTRecords {
+	for _, r := range records {
 		if recordMatches(r.Name, r.Content, fqdn, zone, key) {
 			zoneTXTRecordsURL := dnsAPIBaseURL + "%s/txt/%s"
 			deleteURL := fmt.Sprintf(zoneTXTRecordsURL, zoneID, r.UUID)

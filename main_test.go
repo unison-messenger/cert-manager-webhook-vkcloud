@@ -54,3 +54,35 @@ func TestRecordMatches(t *testing.T) {
 		t.Error("apex challenge should match record named @")
 	}
 }
+
+func TestParseTXTRecords(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		want    []txtRecord
+		wantErr bool
+	}{
+		{"bare array", `[{"uuid":"u1","name":"_acme-challenge.cmtest","dns":"/v2/dns/z","label":"","content":"k1","ttl":60}]`,
+			[]txtRecord{{"u1", "_acme-challenge.cmtest", "k1"}}, false},
+		{"object form", `{"txt_records":[{"uuid":"u2","name":"_acme-challenge.web","content":"k2"}]}`,
+			[]txtRecord{{"u2", "_acme-challenge.web", "k2"}}, false},
+		{"empty array", `[]`, nil, false},
+		{"invalid json", `<html>oops</html>`, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseTXTRecords([]byte(tt.body))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("record %d = %v, want %v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
