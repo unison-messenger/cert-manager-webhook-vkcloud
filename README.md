@@ -78,6 +78,8 @@ helm uninstall -n cert-manager cert-manager-webhook-vkcloud
    os_password: "<ваш_пароль>"
    os_project_id: "<ID_проекта>"
    os_domain_name: "users"
+   # optional: use the domain ID instead of the name (if set, it is sent as "id" and os_domain_name is ignored)
+   # os_domain_id: "<ID_домена>"
  ```
 
  Примените его:
@@ -181,6 +183,8 @@ helm uninstall -n cert-manager cert-manager-webhook-vkcloud
    os_password: "<ваш_пароль>"
    os_project_id: "<ID_проекта>"
    os_domain_name: "users"
+   # optional: use the domain ID instead of the name (if set, it is sent as "id" and os_domain_name is ignored)
+   # os_domain_id: "<ID_домена>"
  ```
 
  ### `clusterissuer.yaml`
@@ -217,9 +221,9 @@ helm uninstall -n cert-manager cert-manager-webhook-vkcloud
 
  ### Нужен ли Docker?
 
- Да, но образ уже собран и доступен на Docker Hub / GitLab. Вы также можете собрать свой, если потребуется кастомизация.
+ Да, но образ собирается в GHCR (`ghcr.io/unison-messenger/cert-manager-webhook-vkcloud`). Вы также можете собрать свой, если потребуется кастомизация.
 
-> Рекомендуется фиксировать версию образа (например, `tag: 1.0.9`) вместо `latest`, и использовать `pullPolicy: IfNotPresent`, чтобы избежать непредсказуемых обновлений и лишних pulls при каждом перезапуске пода.
+> Рекомендуется фиксировать версию образа (например, `tag: 1.1.0`) вместо `latest`, и использовать `pullPolicy: IfNotPresent`, чтобы избежать непредсказуемых обновлений и лишних pulls при каждом перезапуске пода.
 
  ### Что делать, если домен не находится?
 

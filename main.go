@@ -75,7 +75,7 @@ func (c *vkcloudDNSSolver) Present(ch *acme.ChallengeRequest) error {
 		return fmt.Errorf("failed to find zone ID: %w", err)
 	}
 
-	err = createTXTRecord(dnsZoneID, ch.ResolvedFQDN, ch.Key, authToken)
+	err = createTXTRecord(dnsZoneID, relativeName(ch.ResolvedFQDN, ch.ResolvedZone), ch.Key, authToken)
 	if err != nil {
 		return fmt.Errorf("failed to create TXT record: %w", err)
 	}
@@ -100,7 +100,7 @@ func (c *vkcloudDNSSolver) CleanUp(ch *acme.ChallengeRequest) error {
 		return err
 	}
 
-	err = deleteTXTRecord(dnsZoneID, ch.ResolvedFQDN, ch.Key, authToken)
+	err = deleteTXTRecord(dnsZoneID, ch.ResolvedFQDN, ch.ResolvedZone, ch.Key, authToken)
 	if err != nil {
 		return err
 	}
@@ -142,6 +142,15 @@ func authenticate(clientset *kubernetes.Clientset, namespace string, secretRef c
 	osPassword := string(secret.Data["os_password"])
 	osProjectID := string(secret.Data["os_project_id"])
 	osDomainName := string(secret.Data["os_domain_name"])
+	osDomainID := string(secret.Data["os_domain_id"])
+
+	// Keystone user domain: "id" if os_domain_id is set, otherwise "name"
+	userDomain := map[string]string{}
+	if osDomainID != "" {
+		userDomain["id"] = osDomainID
+	} else {
+		userDomain["name"] = osDomainName
+	}
 
 	body := map[string]any{
 		"auth": map[string]any{
@@ -247,10 +256,40 @@ func getZoneID(zone string, token string) (string, error) {
 	return "", fmt.Errorf("zone not found for domain %s", zone)
 }
 
-// createTXTRecord adds a TXT record under the zone
-func createTXTRecord(zoneID, fqdn, key, token string) error {
+// relativeName returns the record name relative to the zone, as the VK Public DNS
+// API expects and returns it: "@" for the zone apex, "_acme-challenge.web" for
+// "_acme-challenge.web.example.com." in zone "example.com."
+func relativeName(fqdn, zone string) string {
+	fqdn = strings.TrimSuffix(fqdn, ".")
+	zone = strings.TrimSuffix(zone, ".")
+	if strings.EqualFold(fqdn, zone) {
+		return "@"
+	}
+	if len(fqdn) > len(zone) && strings.EqualFold(fqdn[len(fqdn)-len(zone)-1:], "."+zone) {
+		return fqdn[:len(fqdn)-len(zone)-1]
+	}
+	return fqdn
+}
+
+// recordMatches reports whether an API record is the challenge record: its name is
+// the relative name or the FQDN (with or without trailing dot) and its content is
+// the key (the API may return it wrapped in double quotes)
+func recordMatches(name, content, fqdn, zone, key string) bool {
+	name = strings.TrimSuffix(name, ".")
+	fqdn = strings.TrimSuffix(fqdn, ".")
+	if !strings.EqualFold(name, relativeName(fqdn, zone)) && !strings.EqualFold(name, fqdn) {
+		return false
+	}
+	if len(content) >= 2 && strings.HasPrefix(content, `"`) && strings.HasSuffix(content, `"`) {
+		content = content[1 : len(content)-1]
+	}
+	return content == key
+}
+
+// createTXTRecord adds a TXT record under the zone, name is relative to the zone
+func createTXTRecord(zoneID, name, key, token string) error {
 	record := map[string]any{
-		"name":    fqdn,
+		"name":    name,
 		"content": key,
 		"ttl":     60,
 	}
@@ -288,7 +327,7 @@ func createTXTRecord(zoneID, fqdn, key, token string) error {
 }
 
 // deleteTXTRecord removes the specific TXT record
-func deleteTXTRecord(zoneID, fqdn, key, token string) error {
+func deleteTXTRecord(zoneID, fqdn, zone, key, token string) error {
 	zoneTXTRecordsURL := dnsAPIBaseURL + "%s/txt/"
 	url := fmt.Sprintf(zoneTXTRecordsURL, zoneID)
 
@@ -333,7 +372,7 @@ func deleteTXTRecord(zoneID, fqdn, key, token string) error {
 	var deleteErrors []string
 
 	for _, r := range recordsResponse.TXTRecords {
-		if r.Name == fqdn && r.Content == key {
+		if recordMatches(r.Name, r.Content, fqdn, zone, key) {
 			zoneTXTRecordsURL := dnsAPIBaseURL + "%s/txt/%s"
 			deleteURL := fmt.Sprintf(zoneTXTRecordsURL, zoneID, r.UUID)
 
@@ -351,7 +390,7 @@ func deleteTXTRecord(zoneID, fqdn, key, token string) error {
 			}
 			resp.Body.Close()
 
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			if resp.StatusCode < 200 || resp.StatusCode > 299 {
 				deleteErrors = append(deleteErrors, fmt.Sprintf(
 					"failed to delete TXT record %q: unexpected status code %d",
 					r.UUID,
