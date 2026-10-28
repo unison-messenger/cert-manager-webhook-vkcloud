@@ -160,9 +160,7 @@ func authenticate(clientset *kubernetes.Clientset, namespace string, secretRef c
 					"user": map[string]any{
 						"name":     osUsername,
 						"password": osPassword,
-						"domain": map[string]string{
-							"id": osDomainName,
-						},
+						"domain":   userDomain,
 					},
 				},
 			},
